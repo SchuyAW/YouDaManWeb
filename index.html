@@ -197,7 +197,7 @@
       <div class="row" style="justify-content:flex-end">
         <button class="btn sub" type="button" id="resetDayBtn" title="Clear all fields for this day">Reset Day</button>
         <button class="btn sub" value="cancel">Cancel</button>
-        <button class="btn" id="saveBtn" value="default">Save</button>
+        <button class="btn" type="button" id="saveBtn">Save</button>
       </div>
     </form>
   </dialog>
@@ -379,8 +379,22 @@
     $('#fDiet').value = e.diet??''; $('#fFollowedPlan').checked = !!e.followedPlan;
     dlg.showModal();
   }
-  $('#dlgForm').addEventListener('submit', async (ev)=>{
-    ev.preventDefault(); if(!currentID) return; const e = state.entries.find(x=>x.id===currentID);
+
+  // Robust file reader for iOS Safari and other browsers
+  async function readFileAsBase64(file){
+    return new Promise((resolve,reject)=>{
+      try{
+        const fr = new FileReader();
+        fr.onload = ()=> resolve(String(fr.result).split(',')[1]);
+        fr.onerror = reject;
+        fr.readAsDataURL(file);
+      }catch(err){ reject(err); }
+    });
+  }
+
+  async function saveCurrentEntry(){
+    if(!currentID) return;
+    const e = state.entries.find(x=>x.id===currentID); if(!e) return;
     e.status = $('#fStatus').value;
     const w = $('#fWeight').value.trim(); e.weight = w? Number(w): null;
     const m = $('#fMood').value.trim(); e.mood = m? Number(m): null;
@@ -395,9 +409,14 @@
     const dtSel = $('#fDiet').value; e.diet = dtSel? dtSel : null;
     e.followedPlan = $('#fFollowedPlan').checked;
     const file = $('#fPhoto').files?.[0];
-    if(file){ const b = await file.arrayBuffer(); e.photo = btoa(String.fromCharCode(...new Uint8Array(b))); }
+    if(file){
+      try{ e.photo = await readFileAsBase64(file); }
+      catch{ /* ignore photo on failure (iOS permission/issues) */ }
+    }
     save(); render(); dlg.close();
-  });
+  }
+
+  $('#saveBtn').addEventListener('click', ()=>{ saveCurrentEntry(); });
 
   $('#minDayBtn').addEventListener('click', ()=>{ if(!currentID) return; const e = state.entries.find(x=>x.id===currentID); e.status='done'; e.minutes = Math.max(e.minutes||0, 20); save(); render(); dlg.close(); });
   $('#fullDayBtn').addEventListener('click', ()=>{ if(!currentID) return; const e = state.entries.find(x=>x.id===currentID); e.status='done'; save(); render(); dlg.close(); });
