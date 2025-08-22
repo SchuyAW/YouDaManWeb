@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Proof, Not Hope — Calendar</title>
+  <meta name="theme-color" content="#0ea5e9" />
+  <style>
+    :root{
+      --bg: #0b0c10; --fg: #e5e7eb; --muted:#9ca3af; --card:#111318; --acc:#10b981; --warn:#ef4444; --ring:#1f2937;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--fg)}
+    .wrap{max-width:980px;margin:0 auto;padding:16px}
+    header{display:flex;gap:12px;align-items:center;justify-content:space-between;margin:6px 0 12px}
+    h1{font-size:clamp(20px,4vw,28px);margin:0}
+    .stats{display:flex;gap:8px;flex-wrap:wrap}
+    .pill{display:flex;gap:6px;align-items:center;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);font-size:13px}
+    .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:10px}
+    @media (min-width:720px){.grid{gap:12px}}
+    .cell{border-radius:14px;border:1px solid rgba(255,255,255,.08);background:var(--card);min-height:78px;padding:8px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;cursor:pointer;transition:transform .05s ease}
+    .cell:active{transform:scale(.98)}
+    .n{font-weight:700;opacity:.95}
+    .sub{font-size:12px;color:var(--muted)}
+    .badges{display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap}
+    .badge{font-size:10px; padding:2px 6px; border-radius:999px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12)}
+    .cell.done .badge,.cell.bonus .badge,.cell.miss .badge{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.28);color:#fff}
+    .cell.done{background:#059669}
+    .cell.bonus{background:#059669cc}
+    .cell.miss{background:#b91c1c}
+    .cell.done .n,.cell.bonus .n,.cell.miss .n,.cell.done .sub,.cell.bonus .sub,.cell.miss .sub{color:#fff}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:12px}
+    .btn{appearance:none;border:0;border-radius:12px;background:#0ea5e9;color:white;padding:10px 14px;font-weight:700;cursor:pointer}
+    .btn.sub{background:#111827;color:#e5e7eb;border:1px solid rgba(255,255,255,.08)}
+    .btn.warn{background:#ef4444}
+    .input, select, textarea{width:100%;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#0f1217;color:var(--fg)}
+    dialog{border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:0;background:var(--card);color:var(--fg);max-width:min(560px,92vw)}
+    dialog::backdrop{background:rgba(0,0,0,.45)}
+    .dlg-h{padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);font-weight:700}
+    .dlg-b{padding:14px;display:grid;gap:12px}
+    .grid-week{display:flex;gap:8px;flex-wrap:wrap}
+    .week{display:flex;align-items:center;gap:6px;padding:8px 10px;border-radius:999px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);font-size:12px}
+    .star{filter:drop-shadow(0 0 6px #facc15)}
+    .dow{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:8px}
+    .dow span{font-size:12px;color:var(--muted);text-align:center}
+    .badge.plan{border-style:dashed}
+    .planLabel{font-size:11px;color:var(--muted);margin-top:2px}
+    .footer{opacity:.6;font-size:12px;margin-top:12px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Proof, Not Hope</h1>
+        <div class="row stats">
+          <div class="pill">Green <strong id="statGreen">0</strong></div>
+          <div class="pill">Red <strong id="statRed">0</strong></div>
+          <div class="pill">Streak <strong id="statStreak">0</strong></div>
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn sub" id="shareBtn" title="Save image of grid">Share</button>
+        <button class="btn sub" id="remBtn" title="Daily reminder">Remind</button>
+        <button class="btn warn" id="resetBtn" title="Start a new 30‑day cycle">Reset</button>
+        <button class="btn sub" id="exportJsonBtn" title="Download JSON">Export JSON</button>
+        <button class="btn sub" id="importJsonBtn" title="Load JSON">Import</button>
+        <button class="btn sub" id="exportCsvBtn" title="Download CSV summary">CSV</button>
+        <button class="btn sub" id="exportIcsBtn" title="Daily calendar reminder (.ics)">.ics</button>
+      </div>
+    </header>
+
+    <section class="card" style="margin-bottom:12px">
+      <div class="row" style="justify-content:space-between;align-items:end">
+        <div style="max-width:580px">
+          <strong>Today Protocol</strong>
+          <div class="row" style="margin-top:6px">
+            <span>• Weigh & log</span>
+            <span>• Send proof</span>
+            <span>• Train (≥ 20–30 min steady)</span>
+            <span>• Mark green</span>
+          </div>
+          <div class="row" style="margin-top:6px">
+            <span class="sub">Today’s plan:</span>
+            <span id="todayPlan" class="sub">—</span>
+            <button class="btn sub" type="button" id="applyTodayPlanBtn" title="Fill today’s fields from the training plan">Apply Plan</button>
+          </div>
+        </div>
+        <div style="min-width:180px">
+          <label style="font-size:12px;color:var(--muted)">Month</label>
+          <input class="input" type="month" id="startMonth" />
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="dow">
+        <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+      </div>
+      <div class="grid" id="grid"></div>
+    </section>
+
+    <section class="card" id="summaryCard" style="margin-top:8px">
+      <strong>Summary</strong>
+      <div id="summaryBody" class="row" style="margin-top:6px;flex-wrap:wrap"></div>
+    </section>
+
+    <p class="footer">Tap a day to check in. Long‑press to quick‑cycle: none → done → bonus → miss.</p>
+  </div>
+
+  <!-- Check-in dialog -->
+  <dialog id="dlg">
+    <div class="dlg-h">Check‑in — <span id="dlgDay"></span></div>
+    <form method="dialog" class="dlg-b" id="dlgForm">
+      <div class="row" style="justify-content:space-between">
+        <button class="btn sub" type="button" id="minDayBtn" title="Mark a minimum viable day (20 min steady)">Minimum Day</button>
+        <button class="btn sub" type="button" id="fullDayBtn" title="Mark as fully completed day">Full Day</button>
+      </div>
+      <div>
+        <label>Status</label>
+        <select id="fStatus" class="input">
+          <option value="none">—</option>
+          <option value="done">Done</option>
+          <option value="bonus">Bonus</option>
+          <option value="miss">Miss</option>
+        </select>
+      </div>
+      <div class="row" style="gap:10px">
+        <div style="flex:1">
+          <label>Weight (kg)</label>
+          <input id="fWeight" class="input" inputmode="decimal" placeholder="e.g. 101.6" />
+        </div>
+        <div style="width:140px">
+          <label>Mood (1–10)</label>
+          <input id="fMood" class="input" type="number" min="1" max="10" />
+        </div>
+      </div>
+      <div class="row" style="gap:10px">
+        <div style="width:160px">
+          <label>Steady (min)</label>
+          <input id="fMinutes" class="input" type="number" min="0" max="180" />
+        </div>
+        <div style="width:160px">
+          <label>Intervals (count)</label>
+          <input id="fIntervals" class="input" type="number" min="0" max="60" />
+        </div>
+        <div style="align-self:end">
+          <label>&nbsp;</label>
+          <div class="row"><input id="fLift" type="checkbox" /> <span class="sub">Lift done</span></div>
+        </div>
+        <div style="width:140px">
+          <label>RPE (1–10)</label>
+          <input id="fRpe" class="input" type="number" min="1" max="10" />
+        </div>
+      </div>
+      <div class="row" style="gap:10px">
+        <div style="width:160px">
+          <label>Sleep (hours)</label>
+          <input id="fSleep" class="input" type="number" step="0.1" min="0" max="24" />
+        </div>
+        <div style="width:160px">
+          <label>Energy (1–5)</label>
+          <input id="fEnergy" class="input" type="number" min="1" max="5" />
+        </div>
+        <div style="width:160px">
+          <label>Anxiety (1–5)</label>
+          <input id="fAnx" class="input" type="number" min="1" max="5" />
+        </div>
+      </div>
+      <div class="row" style="gap:10px;align-items:end">
+        <div style="width:180px">
+          <label>Diet adherence</label>
+          <select id="fDiet" class="input">
+            <option value="">—</option>
+            <option value="yes">Yes</option>
+            <option value="most">Mostly</option>
+            <option value="no">No</option>
+          </select>
+        </div>
+        <div class="row" style="gap:8px;align-items:center">
+          <input id="fFollowedPlan" type="checkbox" />
+          <span class="sub">Followed plan today</span>
+          <button class="btn sub" type="button" id="applyPlanBtn">Apply Plan to this day</button>
+        </div>
+      </div>
+      <div>
+        <label>Note</label>
+        <textarea id="fNote" class="input" rows="2" placeholder="How did today go?"></textarea>
+      </div>
+      <div>
+        <label>Progress photo</label>
+        <input id="fPhoto" class="input" type="file" accept="image/*" />
+        <small id="photoHint" class="sub"></small>
+      </div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn sub" type="button" id="resetDayBtn" title="Clear all fields for this day">Reset Day</button>
+        <button class="btn sub" value="cancel">Cancel</button>
+        <button class="btn" id="saveBtn" value="default">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+  // --- Data model & storage ---
+  const SKEY = 'proofCalendar.v2';
+  const emptyMonth = (start=new Date()) => {
+    const y = start.getFullYear(), m = start.getMonth();
+    const first = new Date(y, m, 1);
+    const daysInMonth = new Date(y, m+1, 0).getDate();
+    const entries = Array.from({length:daysInMonth}).map((_,i)=>({
+      id: crypto.randomUUID(),
+      date: new Date(y, m, i+1).toISOString(),
+      status:'none', weight:null, mood:null, note:'', photo:null,
+      minutes:0, intervals:0, lift:false, rpe:null, sleep:null, energy:null, anx:null, diet:null, followedPlan:false
+    }));
+    return { start: first.toISOString(), entries, meta:{ goal:"Proof, Not Hope", unit:"kg", version:2 } };
+  };
+  const load = ()=>{
+    try{
+      const raw = localStorage.getItem(SKEY);
+      if(raw){ return JSON.parse(raw); }
+      // try migrate v1
+      const v1 = localStorage.getItem('proofCalendar.v1');
+      if(v1){
+        const p = JSON.parse(v1);
+        const migrated = {
+          start: p.start,
+          entries: (p.entries||[]).slice(0,30).map(e=>({
+            id: e.id || crypto.randomUUID(), date: e.date,
+            status: e.status||'none', weight: e.weight??null, mood: e.mood??null, note: e.note||'', photo: e.photo||null,
+            minutes:0, intervals:0, lift:false, rpe:null, sleep:null, energy:null, anx:null, diet:null, followedPlan:false
+          })),
+          meta:{ goal:"Proof, Not Hope", unit:"kg", version:2 }
+        };
+        localStorage.setItem(SKEY, JSON.stringify(migrated));
+        return migrated;
+      }
+      return emptyMonth();
+    }catch{ return emptyMonth(); }
+  };
+  let state = load();
+  const save = ()=>localStorage.setItem(SKEY, JSON.stringify(state));
+
+  // --- Helpers ---
+  const $ = sel => document.querySelector(sel);
+  const $$ = sel => Array.from(document.querySelectorAll(sel));
+  const dayNum = d => new Date(d).getDate();
+  const fmt = d => new Date(d).toLocaleDateString(undefined,{month:'short',day:'numeric'});
+
+  const dowMon0 = d => { const w = new Date(d).getDay(); return (w+6)%7; }; // Mon=0..Sun=6
+
+  const completedFlag = e => (e.status==='done'||e.status==='bonus'|| e.minutes>=20 || e.intervals>0 || e.lift===true);
+  function planForDow(dow){
+    switch(dow){
+      case 0: return { label:'Mon — Steady 60–75 + Lift (Lower/Core)', minutes:60, intervals:0, lift:true };
+      case 1: return { label:'Tue — Steady 45–60 + Intervals 6×6 @AT', minutes:45, intervals:6, lift:false };
+      case 2: return { label:'Wed — Long steady 75–90 + Mobility', minutes:75, intervals:0, lift:false };
+      case 3: return { label:'Thu — Steady 60–75 + Lift (Upper/Core)', minutes:60, intervals:0, lift:true };
+      case 4: return { label:"Fri — Steady 45–60 + 10–15 × 1' on/off @20", minutes:45, intervals:12, lift:false };
+      case 5: return { label:'Sat — Long steady 90', minutes:90, intervals:0, lift:false };
+      case 6: return { label:'Sun — Recovery walk/swim + Core', minutes:20, intervals:0, lift:false };
+    }
+  }
+  function longestStreak(){
+    let best=0, cur=0; for(const e of state.entries){ if(completedFlag(e)){ cur++; best=Math.max(best,cur);} else { cur=0; } } return best;
+  }
+  function totals(){
+    const t = { minutes:0, intervals:0, lifts:0, mvDays:0, dietYes:0, dietMost:0, dietNo:0 };
+    for(const e of state.entries){
+      t.minutes += (e.minutes||0);
+      t.intervals += (e.intervals||0);
+      if(e.lift) t.lifts++;
+      if(completedFlag(e) && (e.minutes<=30) && e.intervals===0 && !e.lift) t.mvDays++;
+      if(e.diet==='yes') t.dietYes++;
+      if(e.diet==='most') t.dietMost++;
+      if(e.diet==='no') t.dietNo++;
+    }
+    return t;
+  }
+  function averages(){
+    const f = x=>x!=null; const m=state.entries;
+    const avg = (arr)=> arr.length? (arr.reduce((a,b)=>a+b,0)/arr.length) : null;
+    return {
+      mood: avg(m.map(e=>e.mood).filter(f)),
+      rpe: avg(m.map(e=>e.rpe).filter(f)),
+      sleep: avg(m.map(e=>e.sleep).filter(f)),
+      energy: avg(m.map(e=>e.energy).filter(f)),
+      anx: avg(m.map(e=>e.anx).filter(f)),
+    };
+  }
+
+  function computeStats(){
+    const greens = state.entries.filter(e=>e.status==='done'||e.status==='bonus').length;
+    const reds = state.entries.filter(e=>e.status==='miss').length;
+    // streak: from today backwards
+    const today = new Date(); today.setHours(0,0,0,0);
+    let idx = state.entries.findIndex(e=> new Date(e.date).toDateString()=== today.toDateString());
+    if(idx<0) idx = state.entries.findIndex(e=> new Date(e.date)>today) - 1;
+    if(idx<0) idx = state.entries.length-1;
+    let streak=0;
+    for(let i=idx;i>=0;i--){ const s=state.entries[i].status; if(s==='done'||s==='bonus') streak++; else break; }
+    return {greens, reds, streak};
+  }
+
+  function weekComplete(k){ // k:0..4
+    const start = k*7; const end = Math.min(start+7, state.entries.length);
+    const slice = state.entries.slice(start,end);
+    return slice.length>0 && slice.every(completedFlag);
+  }
+
+  // --- UI render ---
+  const grid = $('#grid');
+  function render(){
+    grid.innerHTML='';
+    const first = new Date(state.start);
+    const offset = dowMon0(first); // blanks before the 1st of the month
+    for(let i=0;i<offset;i++){
+      const blank = document.createElement('div');
+      blank.className = 'cell';
+      grid.appendChild(blank);
+    }
+    state.entries.forEach((e,i)=>{
+      const div = document.createElement('div');
+      div.className = `cell ${e.status}`;
+      div.innerHTML = `<div class="n">${dayNum(e.date)}</div>
+        <div class="sub">${e.weight? (Number(e.weight).toFixed(1)+ ' kg') : (e.status==='none'?'—': e.status==='bonus'?'Bonus':'') }</div>
+        <div class="badges">${(e.minutes>0? `<span class='badge'>${e.minutes}m</span>`:'')}${(e.intervals>0? `<span class='badge'>${e.intervals}×</span>`:'')}${(e.lift? `<span class='badge'>Lift</span>`:'')}${(e.followedPlan? `<span class='badge plan'>Plan</span>`:'')}</div>`;
+      div.title = `${fmt(e.date)}\nStatus: ${e.status}\nWeight: ${e.weight??'—'}\nMood: ${e.mood??'—'}`;
+      div.addEventListener('click',()=>openDlg(e.id));
+      div.addEventListener('contextmenu',ev=>{ev.preventDefault();cycle(e.id)});
+      div.addEventListener('touchstart', handleLongPress(()=>cycle(e.id)));
+      grid.appendChild(div);
+    });
+    const {greens,reds,streak} = computeStats();
+    $('#statGreen').textContent=greens; $('#statRed').textContent=reds; $('#statStreak').textContent=streak;
+    // Summary update
+    const {minutes, intervals, lifts, mvDays, dietYes, dietMost, dietNo} = totals();
+    const av = averages();
+    const pill = (label,val)=>`<div class="pill">${label} <strong>${val}</strong></div>`;
+    $('#summaryBody').innerHTML = [
+      pill('Minutes', minutes),
+      pill('Intervals', intervals),
+      pill('Lifts', lifts),
+      pill('Min‑days', mvDays),
+      pill('Diet yes', dietYes),
+      pill('Diet mostly', dietMost),
+      pill('Diet no', dietNo),
+      pill('Avg mood', av.mood? av.mood.toFixed(1):'—'),
+      pill('Avg sleep', av.sleep? av.sleep.toFixed(1)+'h':'—'),
+      pill('Avg RPE', av.rpe? av.rpe.toFixed(1):'—')
+    ].join('');
+    // start month input
+    const sd = new Date(state.start); const ym = `${sd.getFullYear()}-${String(sd.getMonth()+1).padStart(2,'0')}`;
+    const sm = $('#startMonth'); if(sm) sm.value = ym;
+    // Today’s plan text
+    const today = new Date(); today.setHours(0,0,0,0);
+    const tIdx = state.entries.findIndex(e=> new Date(e.date).toDateString()=== today.toDateString());
+    if(tIdx>=0){ const p = planForDow(dowMon0(today)); if(p){ $('#todayPlan').textContent = p.label; } }
+  }
+
+  function cycle(id){
+    const order = ['none','done','bonus','miss'];
+    const e = state.entries.find(x=>x.id===id); if(!e) return;
+    e.status = order[(order.indexOf(e.status)+1)%order.length];
+    save(); render();
+  }
+
+  // --- Dialog logic ---
+  const dlg = $('#dlg');
+  let currentID = null;
+  function openDlg(id){
+    currentID = id; const e = state.entries.find(x=>x.id===id); if(!e) return;
+    $('#dlgDay').textContent = `Day ${dayNum(e.date)} • ${fmt(e.date)}`;
+    $('#fStatus').value = e.status; $('#fWeight').value = e.weight??''; $('#fMood').value = e.mood??''; $('#fNote').value = e.note??''; $('#fPhoto').value = '';
+    $('#photoHint').textContent = e.photo? 'Photo saved' : '';
+    $('#fMinutes').value = e.minutes||''; $('#fIntervals').value = e.intervals||''; $('#fLift').checked = !!e.lift; $('#fRpe').value = e.rpe??''; $('#fSleep').value = e.sleep??''; $('#fEnergy').value = e.energy??''; $('#fAnx').value = e.anx??'';
+    $('#fDiet').value = e.diet??''; $('#fFollowedPlan').checked = !!e.followedPlan;
+    dlg.showModal();
+  }
+  $('#dlgForm').addEventListener('submit', async (ev)=>{
+    ev.preventDefault(); if(!currentID) return; const e = state.entries.find(x=>x.id===currentID);
+    e.status = $('#fStatus').value;
+    const w = $('#fWeight').value.trim(); e.weight = w? Number(w): null;
+    const m = $('#fMood').value.trim(); e.mood = m? Number(m): null;
+    e.note = $('#fNote').value.trim();
+    e.minutes = Number($('#fMinutes').value||0);
+    e.intervals = Number($('#fIntervals').value||0);
+    e.lift = $('#fLift').checked;
+    const rpe = $('#fRpe').value.trim(); e.rpe = rpe? Number(rpe): null;
+    const sl = $('#fSleep').value.trim(); e.sleep = sl? Number(sl): null;
+    const en = $('#fEnergy').value.trim(); e.energy = en? Number(en): null;
+    const ax = $('#fAnx').value.trim(); e.anx = ax? Number(ax): null;
+    const dtSel = $('#fDiet').value; e.diet = dtSel? dtSel : null;
+    e.followedPlan = $('#fFollowedPlan').checked;
+    const file = $('#fPhoto').files?.[0];
+    if(file){ const b = await file.arrayBuffer(); e.photo = btoa(String.fromCharCode(...new Uint8Array(b))); }
+    save(); render(); dlg.close();
+  });
+
+  $('#minDayBtn').addEventListener('click', ()=>{ if(!currentID) return; const e = state.entries.find(x=>x.id===currentID); e.status='done'; e.minutes = Math.max(e.minutes||0, 20); save(); render(); dlg.close(); });
+  $('#fullDayBtn').addEventListener('click', ()=>{ if(!currentID) return; const e = state.entries.find(x=>x.id===currentID); e.status='done'; save(); render(); dlg.close(); });
+  $('#applyPlanBtn').addEventListener('click', ()=>{ if(!currentID) return; const i = state.entries.findIndex(x=>x.id===currentID); if(i<0) return; const e = state.entries[i]; const p = planForDow(dowMon0(e.date)); if(!p) return; e.minutes = Math.max(e.minutes||0, p.minutes); e.intervals = Math.max(e.intervals||0, p.intervals); e.lift = e.lift || p.lift; e.status='done'; e.followedPlan = true; save(); render(); dlg.close(); });
+  $('#resetDayBtn').addEventListener('click', ()=>{ if(!currentID) return; const i = state.entries.findIndex(x=>x.id===currentID); if(i<0) return; const e = state.entries[i]; Object.assign(e,{ status:'none', weight:null, mood:null, note:'', photo:null, minutes:0, intervals:0, lift:false, rpe:null, sleep:null, energy:null, anx:null, diet:null, followedPlan:false }); save(); render(); dlg.close(); });
+
+  $('#applyTodayPlanBtn').addEventListener('click', ()=>{
+    const today = new Date(); today.setHours(0,0,0,0);
+    const idx = state.entries.findIndex(e=> new Date(e.date).toDateString()=== today.toDateString());
+    if(idx<0) return; const e = state.entries[idx]; const p = planForDow(dowMon0(today)); if(!p) return;
+    e.minutes = Math.max(e.minutes||0, p.minutes);
+    e.intervals = Math.max(e.intervals||0, p.intervals);
+    e.lift = e.lift || p.lift;
+    e.status = 'done';
+    e.followedPlan = true;
+    save(); render();
+  });
+
+  // long-press helper for mobile quick-cycle
+  function handleLongPress(fn){
+    let timer=null; return (e)=>{ timer=setTimeout(()=>fn(),450); const clear=()=>{ if(timer){clearTimeout(timer); timer=null;} }; e.target.addEventListener('touchend',clear,{once:true}); e.target.addEventListener('touchmove',clear,{once:true}); };
+  }
+
+  // --- Start month / reset ---
+  $('#startMonth').addEventListener('change', e=>{ const [yy,mm] = e.target.value.split('-').map(Number); const first = new Date(yy, mm-1, 1); state = emptyMonth(first); save(); render(); });
+  $('#resetBtn').addEventListener('click', ()=>{ if(confirm('Start a new 30‑day cycle from today?')){ state = emptyMonth(new Date()); save(); render(); }});
+
+  // --- Share grid as image ---
+  $('#shareBtn').addEventListener('click', async ()=>{
+    const png = await capturePNG();
+    const blob = await (await fetch(png)).blob();
+    const file = new File([blob], 'proof-calendar.png', {type:'image/png'});
+    if(navigator.canShare && navigator.canShare({ files: [file] })){
+      navigator.share({ files:[file], title:'Proof Calendar', text:'Proof, Not Hope — my 30‑day streak' }).catch(()=>{});
+    }else{
+      const a = document.createElement('a'); a.href=png; a.download='proof-calendar.png'; a.click();
+    }
+  });
+
+  async function capturePNG(){
+    // Lightweight DOM-to-canvas: clone the grid into an SVG foreignObject, then to PNG
+    const w = grid.clientWidth, h = grid.clientHeight + 160;
+    const wrap = document.createElement('div');
+    wrap.style.width = w+'px'; wrap.style.background = getComputedStyle(document.body).backgroundColor; wrap.style.color = getComputedStyle(document.body).color; wrap.style.padding = '16px'; wrap.style.fontFamily = getComputedStyle(document.body).fontFamily;
+    wrap.innerHTML = `<h2 style="margin:0 0 8px">Proof, Not Hope</h2>`;
+    const clone = grid.cloneNode(true); wrap.appendChild(clone);
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}'><foreignObject width='100%' height='100%'>${new XMLSerializer().serializeToString(wrap)}</foreignObject></svg>`;
+    const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    const img = new Image(); img.src = url; await img.decode();
+    const c = document.createElement('canvas'); c.width=w; c.height=h; const ctx=c.getContext('2d'); ctx.drawImage(img,0,0);
+    return c.toDataURL('image/png');
+  }
+
+  // --- Simple daily reminder (when app is open) ---
+  $('#remBtn').addEventListener('click', async ()=>{
+    if(!('Notification' in window)) return alert('Notifications not supported');
+    if(Notification.permission!=='granted'){
+      const p = await Notification.requestPermission(); if(p!=='granted') return;
+    }
+    const time = prompt('Reminder time (HH:MM, 24h)', '07:00') || '07:00';
+    localStorage.setItem('proof.reminder', time);
+    scheduleLocalReminder(); alert('Daily reminder set for '+time+' (fires when app is open). For installable reminders when closed, add to Home Screen as a PWA.');
+  });
+
+  function scheduleLocalReminder(){
+    const t = localStorage.getItem('proof.reminder'); if(!t) return;
+    const [hh,mm] = t.split(':').map(Number);
+    clearInterval(window._remInt);
+    window._remInt = setInterval(()=>{
+      const n = new Date(); if(n.getHours()===hh && n.getMinutes()===mm && n.getSeconds()<5){ new Notification('Proof, Not Hope',{ body:'Weigh • Send • Train • Mark green. Today only.'}); }
+    },1000);
+  }
+
+  // --- Minimal PWA (installable + offline) ---
+  // create a manifest and service worker on the fly so this single file can be a PWA
+  (function makePWA(){
+    const manifest = { name:'Proof, Not Hope', short_name:'Proof Calendar', start_url:'./', display:'standalone', background_color:'#0b0c10', theme_color:'#0ea5e9', icons:[] };
+    const mblob = new Blob([JSON.stringify(manifest)], {type:'application/json'});
+    const murl = URL.createObjectURL(mblob);
+    const link = document.createElement('link'); link.rel='manifest'; link.href=murl; document.head.appendChild(link);
+
+    const swCode = `self.addEventListener('install',e=>{e.waitUntil(caches.open('proof-v1').then(c=>c.addAll(['./'])))});
+      self.addEventListener('fetch',e=>{e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request)))})`;
+    const sblob = new Blob([swCode], {type:'text/javascript'});
+    const surl = URL.createObjectURL(sblob);
+    if('serviceWorker' in navigator){ navigator.serviceWorker.register(surl).catch(()=>{}); }
+  })();
+
+  // init
+  render();
+  scheduleLocalReminder();
+  </script>
+</body>
+</html>
