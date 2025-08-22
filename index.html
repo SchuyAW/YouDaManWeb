@@ -48,6 +48,42 @@
     .badge.plan{border-style:dashed}
     .planLabel{font-size:11px;color:var(--muted);margin-top:2px}
     .footer{opacity:.6;font-size:12px;margin-top:12px}
+
+    /* Week slider (mobile) */
+    .weekWrap{display:none}
+    .wstrip{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch}
+    .wcell{min-width:120px;flex:0 0 auto;border-radius:14px;border:1px solid rgba(255,255,255,.08);background:var(--card);padding:10px;display:flex;flex-direction:column;gap:6px;align-items:flex-start;justify-content:flex-start}
+    .wcell .n{font-size:16px}
+    .wcell .dowlbl{font-size:12px;color:var(--muted)}
+    .wcell.done{background:#059669;color:#fff}
+    .wcell.bonus{background:#059669cc;color:#fff}
+    .wcell.miss{background:#b91c1c;color:#fff}
+    .wbadges{display:flex;gap:6px;flex-wrap:wrap}
+    .hidden{display:none !important}
+    .btn.tgl{padding:8px 12px}
+    .btn.tgl.active{background:#0ea5e9;color:#fff}
+
+    /* Snap scrolling for week slider */
+    .wstrip{scroll-snap-type:x mandatory}
+    .wcell{scroll-snap-align:start}
+
+    /* Agenda list (mobile) */
+    .alist{display:flex;flex-direction:column;gap:10px}
+    .arow{display:flex;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.08);background:var(--card);border-radius:12px;padding:10px}
+    .adate{min-width:84px;text-align:left}
+    .adate .d{font-weight:700}
+    .adate .w{font-size:12px;color:var(--muted)}
+    .astatus{width:10px;height:10px;border-radius:999px;background:#4b5563}
+    .arow.done{background:#059669;color:#fff}
+    .arow.bonus{background:#059669cc;color:#fff}
+    .arow.miss{background:#b91c1c;color:#fff}
+    .arow .wbadges .badge{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.28);color:#fff}
+
+    /* Responsive switch */
+    @media (max-width: 768px){
+      .monthWrap{display:none}
+      .weekWrap{display:block}
+    }
   </style>
 </head>
 <body>
@@ -95,11 +131,31 @@
       </div>
     </section>
 
-    <section>
+    <section class="monthWrap">
       <div class="dow">
         <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
       </div>
       <div class="grid" id="grid"></div>
+    </section>
+
+    <!-- Mobile week slider -->
+    <section class="weekWrap">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div class="row" style="gap:6px;align-items:center">
+          <button class="btn sub" id="prevWeekBtn" title="Previous week">◀︎</button>
+          <button class="btn sub" id="nextWeekBtn" title="Next week">▶︎</button>
+          <button class="btn sub" id="todayBtn" title="Jump to current week">Today</button>
+        </div>
+        <div class="row" style="gap:6px;align-items:center">
+          <button class="btn tgl sub active" id="weekViewBtn" title="Week view">Week</button>
+          <button class="btn tgl sub" id="agendaViewBtn" title="Agenda list view">Agenda</button>
+        </div>
+      </div>
+      <div id="weekLabel" class="sub" style="margin-bottom:6px"></div>
+      <div id="weekStrip" class="wstrip"></div>
+      <div id="agendaWrap" class="agendaWrap hidden">
+        <div id="agendaList" class="alist"></div>
+      </div>
     </section>
 
     <section class="card" id="summaryCard" style="margin-top:8px">
@@ -312,6 +368,76 @@
 
   // --- UI render ---
   const grid = $('#grid');
+  let weekIdx = 0; // 0-based within current month
+  let viewMode = 'week'; // 'week' | 'agenda' (mobile)
+
+  function weeksInMonth(){
+    const first = new Date(state.start);
+    const daysInMonth = new Date(first.getFullYear(), first.getMonth()+1, 0).getDate();
+    const offset = dowMon0(first);
+    return Math.ceil((offset + daysInMonth)/7);
+  }
+
+  function setWeekToToday(){
+    const today = new Date(); today.setHours(0,0,0,0);
+    const i = state.entries.findIndex(e=> new Date(e.date).toDateString()=== today.toDateString());
+    if(i>=0){
+      const first = new Date(state.start); const offset = dowMon0(first);
+      weekIdx = Math.floor((offset + i)/7);
+    }else{ weekIdx = 0; }
+  }
+
+  function renderWeek(){
+    const strip = $('#weekStrip'); if(!strip) return; strip.innerHTML='';
+    const first = new Date(state.start); const daysInMonth = new Date(first.getFullYear(), first.getMonth()+1, 0).getDate();
+    const offset = dowMon0(first);
+    const startCell = weekIdx*7;
+    const labelStartOffset = Math.max(0, startCell - offset);
+    const startDate = new Date(first.getFullYear(), first.getMonth(), 1 + labelStartOffset);
+    const endDate = new Date(first.getFullYear(), first.getMonth(), Math.min(daysInMonth, 1 + labelStartOffset + 6));
+    $('#weekLabel').textContent = `${startDate.toLocaleDateString(undefined,{month:'short',day:'numeric'})} – ${endDate.toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
+
+    for(let d=0; d<7; d++){
+      const cellIdx = startCell + d;
+      const dayIdx = cellIdx - offset; // 0-based index into entries
+      if(dayIdx < 0 || dayIdx >= state.entries.length){
+        const blank = document.createElement('div'); blank.className='wcell'; blank.style.opacity='.4'; strip.appendChild(blank); continue;
+      }
+      const e = state.entries[dayIdx];
+      const dowNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+      const div = document.createElement('div');
+      div.className = `wcell ${e.status}`;
+      div.innerHTML = `<div class="dowlbl">${dowNames[d]}</div>
+        <div class="n">${dayNum(e.date)} ${new Date(e.date).toLocaleDateString(undefined,{month:'short'})}</div>
+        <div class="sub">${e.weight? (Number(e.weight).toFixed(1)+ ' kg') : (e.status==='none'?'—': e.status==='bonus'?'Bonus':'') }</div>
+        <div class="wbadges">${(e.minutes>0? `<span class='badge'>${e.minutes}m</span>`:'')}${(e.intervals>0? `<span class='badge'>${e.intervals}×</span>`:'')}${(e.lift? `<span class='badge'>Lift</span>`:'')}${(e.followedPlan? `<span class='badge plan'>Plan</span>`:'')}</div>`;
+      div.title = `${fmt(e.date)}\nStatus: ${e.status}`;
+      div.addEventListener('click',()=>openDlg(e.id));
+      div.addEventListener('contextmenu',ev=>{ev.preventDefault();cycle(e.id)});
+      strip.appendChild(div);
+    }
+  }
+  function renderAgenda(){
+    const wrap = document.getElementById('agendaWrap');
+    const list = document.getElementById('agendaList');
+    if(!wrap || !list) return;
+    if(viewMode !== 'agenda'){ wrap.classList.add('hidden'); return; }
+    wrap.classList.remove('hidden');
+    list.innerHTML = '';
+    const dowNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    state.entries.forEach((e)=>{
+      const row = document.createElement('div');
+      row.className = `arow ${e.status}`;
+      const d = new Date(e.date);
+      const dateHtml = `<div class="adate"><div class="d">${d.getDate()} ${d.toLocaleDateString(undefined,{month:'short'})}</div><div class="w">${dowNames[dowMon0(e.date)]}</div></div>`;
+      const statDot = `<div class="astatus" style="background:${e.status==='done'||e.status==='bonus'?'#10b981': e.status==='miss' ? '#ef4444' : '#4b5563'}"></div>`;
+      const weight = `<div class="sub">${e.weight? (Number(e.weight).toFixed(1)+' kg') : '—'}</div>`;
+      const badges = `<div class="wbadges">${(e.minutes>0? `<span class='badge'>${e.minutes}m</span>`:'')}${(e.intervals>0? `<span class='badge'>${e.intervals}×</span>`:'')}${(e.lift? `<span class='badge'>Lift</span>`:'')}${(e.followedPlan? `<span class='badge plan'>Plan</span>`:'')}</div>`;
+      row.innerHTML = dateHtml + statDot + weight + badges;
+      row.addEventListener('click', ()=>openDlg(e.id));
+      list.appendChild(row);
+    });
+  }
   function render(){
     grid.innerHTML='';
     const first = new Date(state.start);
@@ -358,6 +484,30 @@
     const today = new Date(); today.setHours(0,0,0,0);
     const tIdx = state.entries.findIndex(e=> new Date(e.date).toDateString()=== today.toDateString());
     if(tIdx>=0){ const p = planForDow(dowMon0(today)); if(p){ $('#todayPlan').textContent = p.label; } }
+    setWeekToToday();
+    renderWeek();
+  $('#prevWeekBtn').addEventListener('click', ()=>{ weekIdx = Math.max(0, weekIdx-1); renderWeek(); });
+  $('#nextWeekBtn').addEventListener('click', ()=>{ weekIdx = Math.min(weeksInMonth()-1, weekIdx+1); renderWeek(); });
+
+  // Swipe support for the week strip
+  (function(){
+    const el = document.getElementById('weekStrip'); if(!el) return;
+    let sx=0, dx=0;
+    el.addEventListener('touchstart', e=>{ sx = e.touches[0].clientX; });
+    el.addEventListener('touchend', e=>{ dx = (e.changedTouches[0].clientX - sx); if(Math.abs(dx)>50){ if(dx<0) { weekIdx = Math.min(weeksInMonth()-1, weekIdx+1);} else { weekIdx = Math.max(0, weekIdx-1);} renderWeek(); } });
+  })();
+
+  const todayBtn = document.getElementById('todayBtn');
+  if(todayBtn){ todayBtn.addEventListener('click', ()=>{ setWeekToToday(); renderWeek(); }); }
+
+  const weekBtn = document.getElementById('weekViewBtn');
+  const agendaBtn = document.getElementById('agendaViewBtn');
+  if(weekBtn && agendaBtn){
+    weekBtn.addEventListener('click', ()=>{ viewMode='week'; weekBtn.classList.add('active'); agendaBtn.classList.remove('active'); document.getElementById('agendaWrap')?.classList.add('hidden'); });
+    agendaBtn.addEventListener('click', ()=>{ viewMode='agenda'; agendaBtn.classList.add('active'); weekBtn.classList.remove('active'); renderAgenda(); });
+  }
+
+    if(viewMode==='agenda'){ renderAgenda(); } else { document.getElementById('agendaWrap')?.classList.add('hidden'); }
   }
 
   function cycle(id){
@@ -507,7 +657,11 @@
 
   // init
   render();
+  setWeekToToday();
+  renderWeek();
   scheduleLocalReminder();
+  if(viewMode==='agenda'){ renderAgenda(); }
   </script>
 </body>
 </html>
+5
