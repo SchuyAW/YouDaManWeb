@@ -17,6 +17,9 @@
     h1{font-size:clamp(20px,4vw,28px);margin:0}
     .stats{display:flex;gap:8px;flex-wrap:wrap}
     .pill{display:flex;gap:6px;align-items:center;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);font-size:13px}
+    .pill.sync.wait{background:rgba(14,165,233,.18);border-color:rgba(14,165,233,.3)}
+    .pill.sync.ok{background:rgba(16,185,129,.18);border-color:rgba(16,185,129,.3)}
+    .pill.sync.err{background:rgba(239,68,68,.18);border-color:rgba(239,68,68,.3)}
     .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:10px}
     @media (min-width:720px){.grid{gap:12px}}
     .cell{border-radius:14px;border:1px solid rgba(255,255,255,.08);background:var(--card);min-height:78px;padding:8px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;cursor:pointer;transition:transform .05s ease}
@@ -95,6 +98,7 @@
           <div class="pill">Green <strong id="statGreen">0</strong></div>
           <div class="pill">Red <strong id="statRed">0</strong></div>
           <div class="pill">Streak <strong id="statStreak">0</strong></div>
+          <div class="pill sync wait" id="syncPill">Syncing…</div>
         </div>
       </div>
       <div class="row">
@@ -261,6 +265,19 @@
   <script>
   // --- Data model & storage ---
   const SKEY = 'proofCalendar.v2';
+  // === JSONBin cloud sync (set your BIN_ID and API_KEY) ===
+  const BIN_ID = '68a89b6543b1c97be925a896';
+  const API_KEY = '$2a$10$pR0ieAqrtkLQUMXxXerILuO1WtfuyvpX7ecCNPhf2X6MIJAvcH41e';
+  const BIN_URL = BIN_ID ? `https://api.jsonbin.io/v3/b/${BIN_ID}` : null;
+  const REMOTE_OK = BIN_ID && API_KEY && !BIN_ID.includes('PASTE') && !API_KEY.includes('PASTE');
+
+  function debounce(fn, ms){ let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), ms); }; }
+  function setSync(text, cls){
+    const el = document.getElementById('syncPill'); if(!el) return;
+    el.textContent = text;
+    el.className = 'pill sync ' + (cls||'');
+  }
+  function isValidDate(d){ return d instanceof Date && !isNaN(d.getTime()); }
   const emptyMonth = (start=new Date()) => {
     const y = start.getFullYear(), m = start.getMonth();
     const first = new Date(y, m, 1);
@@ -297,7 +314,50 @@
     }catch{ return emptyMonth(); }
   };
   let state = load();
-  const save = ()=>localStorage.setItem(SKEY, JSON.stringify(state));
+
+  async function loadRemoteState(){
+    if(!REMOTE_OK) return false;
+    try{
+      setSync('Syncing…','wait');
+      const res = await fetch(BIN_URL + '/latest', { headers: { 'X-Master-Key': API_KEY } });
+      if(!res.ok) throw new Error('remote fetch failed');
+      const data = await res.json();
+      if(data && data.record && Array.isArray(data.record.entries)){
+        const rec = data.record;
+        // Ensure there is a valid start date. If missing, derive from first entry or fall back to current month.
+        if(!rec.start){
+          if(rec.entries.length){
+            const d0 = new Date(rec.entries[0].date);
+            const first = isValidDate(d0) ? new Date(d0.getFullYear(), d0.getMonth(), 1) : new Date();
+            rec.start = new Date(first.getFullYear(), first.getMonth(), 1).toISOString();
+          }else{
+            rec.start = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+          }
+        }
+        state = rec;
+        localStorage.setItem(SKEY, JSON.stringify(state));
+        setSync('Cloud loaded','ok');
+        return true;
+      }
+    }catch(err){ console.warn('JSONBin load failed:', err); setSync('Offline (local)','err'); }
+    return false;
+  }
+
+  async function saveRemoteState(){
+    if(!REMOTE_OK) return;
+    setSync('Syncing…','wait');
+    try{
+      await fetch(BIN_URL, {
+        method:'PUT',
+        headers: { 'Content-Type':'application/json', 'X-Master-Key': API_KEY },
+        body: JSON.stringify(state)
+      });
+      setSync('Saved','ok');
+    }catch(err){ console.warn('JSONBin save failed:', err); setSync('Offline (queued)','err'); }
+  }
+  const debouncedRemoteSave = debounce(saveRemoteState, 800);
+
+  const save = ()=>{ localStorage.setItem(SKEY, JSON.stringify(state)); debouncedRemoteSave(); };
 
   // --- Helpers ---
   const $ = sel => document.querySelector(sel);
@@ -373,12 +433,14 @@
 
   function weeksInMonth(){
     const first = new Date(state.start);
+    if(!state.start || !isValidDate(first)) return 5; // safe default
     const daysInMonth = new Date(first.getFullYear(), first.getMonth()+1, 0).getDate();
     const offset = dowMon0(first);
     return Math.ceil((offset + daysInMonth)/7);
   }
 
   function setWeekToToday(){
+    if(!state.start){ weekIdx = 0; return; }
     const today = new Date(); today.setHours(0,0,0,0);
     const i = state.entries.findIndex(e=> new Date(e.date).toDateString()=== today.toDateString());
     if(i>=0){
@@ -389,7 +451,10 @@
 
   function renderWeek(){
     const strip = $('#weekStrip'); if(!strip) return; strip.innerHTML='';
-    const first = new Date(state.start); const daysInMonth = new Date(first.getFullYear(), first.getMonth()+1, 0).getDate();
+    if(!state.start){ return; }
+    const first = new Date(state.start);
+    if(!isValidDate(first)) return;
+    const daysInMonth = new Date(first.getFullYear(), first.getMonth()+1, 0).getDate();
     const offset = dowMon0(first);
     const startCell = weekIdx*7;
     const labelStartOffset = Math.max(0, startCell - offset);
@@ -656,12 +721,25 @@
   })();
 
   // init
-  render();
-  setWeekToToday();
-  renderWeek();
-  scheduleLocalReminder();
-  if(viewMode==='agenda'){ renderAgenda(); }
+  (async function(){
+    setSync(navigator.onLine ? 'Checking cloud…' : 'Offline (local)','wait');
+    window.addEventListener('online', ()=> setSync('Online','ok'));
+    window.addEventListener('offline', ()=> setSync('Offline (local)','err'));
+    const loaded = await loadRemoteState();
+    // Ensure state has a valid month even if remote returned partial/empty
+    const needInit = !state || !Array.isArray(state.entries) || !state.entries.length || !state.start || !isValidDate(new Date(state.start));
+    if(needInit){
+      state = emptyMonth(new Date());
+      localStorage.setItem(SKEY, JSON.stringify(state));
+      // push an initial state to remote so future loads are valid
+      try{ await saveRemoteState(); }catch{}
+    }
+    render();
+    setWeekToToday();
+    renderWeek();
+    scheduleLocalReminder();
+    if(viewMode==='agenda'){ renderAgenda(); }
+  })();
   </script>
 </body>
 </html>
-5
